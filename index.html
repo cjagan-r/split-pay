@@ -57,6 +57,10 @@
       <a class="btn" data-k="pp">PhonePe</a>
       <a class="btn" data-k="gp">Google Pay</a>
       <a class="btn" data-k="pt">Paytm</a>
+      <a class="btn" data-k="bh">BHIM</a>
+      <a class="btn" data-k="am">Amazon Pay</a>
+      <a class="btn" data-k="cr">CRED</a>
+      <a class="btn" data-k="wa">WhatsApp</a>
     </div>
   </div>
 
@@ -102,7 +106,7 @@ const T = {
 };
 T.en.choose = 'Choose your payment app'; T.hi.choose = 'अपना पेमेंट ऐप चुनें'; T.te.choose = 'మీ చెల్లింపు యాప్ ఎంచుకోండి';
 const isAndroid = /android/i.test(navigator.userAgent);
-const schemes = {pp:'phonepe://pay?', gp:'tez://upi/pay?', pt:'paytmmp://pay?'};
+const schemes = {pp:'phonepe://pay?', gp:'tez://upi/pay?', pt:'paytmmp://pay?', bh:'bhim://upi/pay?', am:'amazonpay://upi/pay?', cr:'credpay://upi/pay?', wa:'upi://pay?'};
 let curQs = '';
 let L = 'en';
 try { L = localStorage.lang || ((navigator.language||'').startsWith('te') ? 'te' : (navigator.language||'').startsWith('hi') ? 'hi' : 'en'); } catch(e){}
