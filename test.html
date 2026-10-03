@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UPI test</title>
+<style>body{font:18px system-ui;padding:16px;max-width:420px;margin:auto}input{width:100%;padding:12px;font-size:18px;margin:4px 0 12px;box-sizing:border-box}a{display:block;padding:14px;margin:8px 0;background:#0a7d4f;color:#fff;border-radius:10px;text-decoration:none;text-align:center}small{color:#666;word-break:break-all}</style></head><body>
+<h3>UPI launch test</h3>
+<label>Your real UPI ID</label><input id="pa" value="test@upi" autocapitalize="none">
+<label>Amount</label><input id="am" value="1">
+<a id="l1">1. Plain upi://pay</a>
+<a id="l2">2. Android chooser (intent)</a>
+<a id="l3">3. Intent with VIEW + BROWSABLE</a>
+<a id="l4">4. PhonePe direct</a>
+<a id="l5">5. Google Pay direct</a>
+<a id="l6">6. Paytm direct</a>
+<small id="ua"></small>
+<script>
+function set(){var q='pa='+encodeURIComponent(document.getElementById('pa').value)+'&pn=Test&am='+document.getElementById('am').value+'&cu=INR&tn=test';
+var m={l1:'upi://pay?'+q,l2:'intent://pay?'+q+'#Intent;scheme=upi;end',l3:'intent://pay?'+q+'#Intent;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;scheme=upi;end',l4:'phonepe://pay?'+q,l5:'tez://upi/pay?'+q,l6:'paytmmp://pay?'+q};
+for(var k in m)document.getElementById(k).href=m[k];}
+document.getElementById('pa').oninput=set;document.getElementById('am').oninput=set;set();
+document.getElementById('ua').textContent=navigator.userAgent;
+</script></body></html>
