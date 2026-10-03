@@ -52,6 +52,7 @@
     <div class="big" id="partAmt"></div>
     <div class="dots" id="dots"></div>
     <a class="btn" id="payBtn" href="#"></a>
+    <a href="#" id="retry" class="sub hidden" style="display:block;margin:12px 0"></a>
     <div id="apps" class="hidden">
       <div class="sub" id="chooseTxt"></div>
       <a class="btn" data-k="pp">PhonePe</a>
@@ -69,7 +70,7 @@
     <div class="row"><button class="btn" id="yes"></button><button class="btn ghost" id="no"></button></div>
   </div>
 
-  <div class="card hidden" id="stepDone"><div class="big">✅</div><h1 id="tDone"></h1><div class="big" id="doneAmt"></div></div>
+  <div class="card hidden" id="stepDone"><div class="big">✅</div><h1 id="tDone"></h1><div class="big" id="doneAmt"></div><div class="sub" id="confirm"></div></div>
 </section>
 
 <!-- ============ ONE-TIME SETUP (family member does this) ============ -->
@@ -88,6 +89,15 @@
     <div class="sub" id="linkTxt" style="word-break:break-all;margin-top:10px"></div>
   </div>
 </section>
+
+<section id="shopView" class="hidden">
+  <div class="card"><div class="sub">Shop screen - keep this open</div><h1 id="shopName"></h1></div>
+  <div id="claims"></div>
+</section>
+<div class="card hidden" id="shopCard">
+  <a class="btn" id="shopLink">Open shop screen</a>
+  <div class="sub" style="margin-top:10px">Open this on the shop's phone and keep it open. Each payment shows up with a Received button.</div>
+</div>
 
 </main>
 
@@ -108,6 +118,10 @@ T.en.choose = 'Choose your payment app'; T.hi.choose = 'अपना पेम�
 const isAndroid = /android/i.test(navigator.userAgent);
 const schemes = {pp:'phonepe://pay?', gp:'tez://upi/pay?', pt:'paytmmp://pay?', bh:'bhim://upi/pay?', am:'amazonpay://upi/pay?', cr:'credpay://upi/pay?', wa:'upi://pay?'};
 let curQs = '';
+T.en.waitShop = 'Waiting for shop to confirm...'; T.hi.waitShop = 'दुकानदार की पुष्टि का इंतज़ार...'; T.te.waitShop = 'షాప్ నిర్ధారణ కోసం వేచి ఉంది...';
+T.en.shopOk = 'Shop confirmed ✓'; T.hi.shopOk = 'दुकानदार ने पुष्टि की ✓'; T.te.shopOk = 'షాప్ నిర్ధారించింది ✓';
+T.en.retry = 'Last payment did not go through? Pay it again'; T.hi.retry = 'पिछला पेमेंट नहीं हुआ? फिर से करें'; T.te.retry = 'గత చెల్లింపు కాలేదా? మళ్ళీ చేయండి';
+const SK = new URLSearchParams(location.search).get('k');
 let L = 'en';
 try { L = localStorage.lang || ((navigator.language||'').startsWith('te') ? 'te' : (navigator.language||'').startsWith('hi') ? 'hi' : 'en'); } catch(e){}
 
@@ -120,7 +134,7 @@ const q = new URLSearchParams(location.search);
 const pa = q.get('pa'), pn = q.get('pn') || 'Shop';
 const limit = Math.round(parseFloat(q.get('lim') || '2000') * 100) || LIMIT;
 
-if (!pa) initSetup(); else initCustomer();
+if (q.get('shop') && SK) initShop(); else if (!pa) initSetup(); else initCustomer();
 
 /* ---------- setup ---------- */
 function initSetup() {
@@ -131,10 +145,13 @@ function initSetup() {
     if (!/^[\w.\-]+@[\w.\-]+$/.test(id)) return alert('Enter a valid UPI ID');
     if (!nm) return alert('Enter shop name');
     try { localStorage.upi = id; localStorage.shop = nm; } catch(e){}
-    const url = location.origin + location.pathname + '?' + new URLSearchParams({pa:id, pn:nm});
+    let key = ''; try { key = localStorage.k || ''; } catch(e){}
+    if (!key) { key = Math.random().toString(36).slice(2, 12); try { localStorage.k = key; } catch(e){} }
+    const url = location.origin + location.pathname + '?' + new URLSearchParams({pa:id, pn:nm, k:key});
     $('poster').classList.remove('hidden'); $('pName').textContent = nm; $('qr').innerHTML = '';
     new QRCode($('qr'), {text:url, width:260, height:260, correctLevel:QRCode.CorrectLevel.M});
     $('linkTxt').textContent = url;
+    $('shopCard').classList.remove('hidden'); $('shopLink').href = location.origin + location.pathname + '?shop=1&k=' + key + '&pn=' + encodeURIComponent(nm);
   };
 }
 
@@ -148,7 +165,7 @@ function initCustomer() {
   $('lang').onclick = e => { if (e.target.dataset.l) { L = e.target.dataset.l; try{localStorage.lang=L}catch(_){} initCustomer(); render(); } };
   const t = T[L];
   $('shopLbl').textContent = t.shop; $('tEnter').textContent = t.enter; $('start').textContent = t.start;
-  $('chooseTxt').textContent = t.choose; $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
+  $('chooseTxt').textContent = t.choose; $('retry').textContent = t.retry; $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
   $('amt').oninput = () => {
     const p = Math.round(parseFloat($('amt').value) * 100);
     $('plan').textContent = p > 0 ? (p > limit ? t.split(Math.ceil(p/limit)) + ': ' + split(p, limit).map(inr).join(' + ') : '') : '';
@@ -161,6 +178,7 @@ function initCustomer() {
   $('yes').onclick = () => { i++; waiting = false; if (i >= parts.length) { $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone'); } else { show('stepPay'); render(); launch(); } };
   $('no').onclick = () => { show('stepPay'); render(); launch(); };
   document.querySelectorAll('#stepPay a').forEach(a => a.onclick = () => { waiting = true; if (a.dataset.k) { try { localStorage.app = a.dataset.k; } catch(e){} } });
+  $('retry').onclick = e => { e.preventDefault(); if (i > 0) { i--; render(); launch(); } };
 }
 
 function show(id) { ['stepAmount','stepPay','stepAsk','stepDone'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
@@ -170,6 +188,7 @@ function render() {
   const t = T[L], n = parts.length;
   $('partLbl').textContent = n > 1 ? `${t.part} ${i+1} ${t.of} ${n}` : t.one;
   $('partAmt').textContent = inr(parts[i]);
+  $('retry').classList.toggle('hidden', i === 0);
   $('dots').innerHTML = parts.map((_, k) => `<span class="dot ${k<i?'done':k===i?'cur':''}"></span>`).join('');
   $('payBtn').textContent = `${t.pay} ${inr(parts[i])}`;
   const p = new URLSearchParams({pa, pn, am:(parts[i]/100).toFixed(2), cu:'INR', tn: n>1 ? `Bill part ${i+1} of ${n}` : 'Bill'});
@@ -191,8 +210,67 @@ function launch() {
 
 // When the customer comes back from their UPI app, ask if it worked.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && waiting && parts.length) show('stepAsk');
+  if (document.hidden || !waiting || !parts.length) return;
+  waiting = false; i++;
+  if (i >= parts.length) finish(); else { show('stepPay'); render(); launch(); }
 });
+function finish() {
+  $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone'); sendClaim();
+}
+
+// Tell the shop's phone (via the free ntfy.sh relay) that a bill was paid, and wait for its OK.
+function sendClaim() {
+  if (!SK) return;
+  const id = Math.random().toString(36).slice(2, 10);
+  const total = parts.reduce((a,b)=>a+b,0);
+  try { fetch('https://ntfy.sh/sp-' + SK, {method:'POST', body: JSON.stringify({id:id, total:total, n:parts.length, t:Date.now()})}).catch(function(){}); } catch(e){}
+  $('confirm').textContent = T[L].waitShop;
+  try {
+    const es = new EventSource('https://ntfy.sh/sp-' + SK + '-r-' + id + '/sse');
+    es.onmessage = function(e) {
+      try { if (JSON.parse(e.data).event !== 'message') return; } catch(_) { return; }
+      $('confirm').textContent = T[L].shopOk; $('confirm').style.color = 'var(--accent)'; $('confirm').style.fontWeight = '700'; es.close();
+    };
+  } catch(e){}
+}
+
+function beep() {
+  try { if (navigator.vibrate) navigator.vibrate(300); const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); setTimeout(function(){ o.stop(); }, 250); } catch(e){}
+}
+
+/* ---------- shop screen ---------- */
+function initShop() {
+  $('shopView').classList.remove('hidden'); $('shopName').textContent = pn;
+  try { if (navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
+  let done = {}; try { done = JSON.parse(localStorage['done' + SK] || '{}'); } catch(e){}
+  const claims = {};
+  const draw = function() {
+    const ids = Object.keys(claims).sort(function(a,b){ return claims[b].t - claims[a].t; });
+    $('claims').innerHTML = ids.length ? ids.map(function(id) {
+      const c = claims[id];
+      return '<div class="card"><div class="big">' + inr(c.total) + '</div><div class="sub">' + (c.n > 1 ? c.n + ' payments · ' : '') + new Date(c.t).toLocaleTimeString() + '</div>' +
+        (done[id] ? '<div class="big">✅</div>' : '<button class="btn" data-id="' + id + '">Received ✓</button>') + '</div>';
+    }).join('') : '<div class="sub">Waiting for payments...</div>';
+  };
+  $('claims').onclick = function(e) {
+    const id = e.target.dataset.id; if (!id) return;
+    fetch('https://ntfy.sh/sp-' + SK + '-r-' + id, {method:'POST', body:'ok'}).catch(function(){});
+    done[id] = 1; try { localStorage['done' + SK] = JSON.stringify(done); } catch(_){} draw();
+  };
+  const es = new EventSource('https://ntfy.sh/sp-' + SK + '/sse');
+  es.onmessage = function(e) {
+    try {
+      const m = JSON.parse(e.data); if (m.event !== 'message') return;
+      const c = JSON.parse(m.message);
+      const id = String(c.id).replace(/[^a-z0-9]/g, '').slice(0, 12);
+      if (!id || claims[id]) return;
+      claims[id] = {total: Number(c.total) || 0, n: Number(c.n) || 1, t: Number(c.t) || Date.now()};
+      if (!done[id]) beep();
+      draw();
+    } catch(_){}
+  };
+  draw();
+}
 </script>
 </body>
 </html>
