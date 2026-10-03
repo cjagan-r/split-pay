@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Split Pay</title>
 <script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --fg:#1a1d21; --muted:#6b7280; --accent:#0a7d4f; --line:#e3e6ea; --bad:#b42318; }
   @media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#1b1f25; --fg:#eef0f3; --muted:#9aa3ae; --accent:#3ecf8e; --line:#2a3039; --bad:#f97066; } }
@@ -25,6 +26,7 @@
   .lang button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
   .hidden { display:none !important }
   .err { color:var(--bad); }
+  @media print { body * { visibility:hidden } #poster, #poster * { visibility:visible } #poster { position:absolute; left:0; top:0; width:100%; border:0 } }
 </style>
 </head>
 <body>
@@ -62,6 +64,25 @@
   </div>
 
   <div class="card hidden" id="stepDone"><div class="big">✅</div><h1 id="tDone"></h1><div class="big" id="doneAmt"></div><div class="sub" id="confirm"></div></div>
+</section>
+
+<!-- Shown when the page is opened with no shop details: make a poster QR -->
+<section id="setup" class="hidden">
+  <div class="card">
+    <h1>Shop poster</h1>
+    <input id="sUpi" placeholder="Shop UPI ID  e.g. shop@upi" autocapitalize="none">
+    <input id="sName" placeholder="Shop name">
+    <input id="sMc" placeholder="Merchant code (optional, 4 digits)" inputmode="numeric" maxlength="4">
+    <button class="btn" id="make">Make poster QR</button>
+    <div class="sub" style="margin-top:12px">Shop with an account? <a href="app/">Open the shop app</a></div>
+  </div>
+  <div class="card hidden" id="poster">
+    <div class="big" style="font-size:30px" id="pName"></div>
+    <div id="qr" style="display:flex;justify-content:center;padding:14px;background:#fff;border-radius:12px;margin:12px 0"></div>
+    <div class="big" style="font-size:22px">Scan with phone camera<br>फोन कैमरा से स्कैन करें<br>ఫోన్ కెమెరాతో స్కాన్ చేయండి</div>
+    <button class="btn" onclick="window.print()">🖨 Print poster</button>
+    <div class="sub" id="linkTxt" style="word-break:break-all;margin-top:10px"></div>
+  </div>
 </section>
 
 </main>
@@ -120,7 +141,24 @@ if (slug) {
     $('msg').classList.add('hidden'); initCustomer();
   }).catch(() => message('bad'));
 } else if (pa) initCustomer();
-else message('bad');
+else initSetup();
+
+function initSetup() {
+  $('setup').classList.remove('hidden');
+  try { $('sUpi').value = localStorage.upi || ''; $('sName').value = localStorage.shop || ''; $('sMc').value = localStorage.mc || ''; } catch(e){}
+  $('make').onclick = () => {
+    const id = $('sUpi').value.trim(), nm = $('sName').value.trim(), m = $('sMc').value.trim();
+    if (!/^[\w.\-]+@[\w.\-]+$/.test(id)) return alert('Enter a valid UPI ID');
+    if (!nm) return alert('Enter shop name');
+    if (m && !/^[0-9]{4}$/.test(m)) return alert('Merchant code must be 4 digits');
+    try { localStorage.upi = id; localStorage.shop = nm; localStorage.mc = m; } catch(e){}
+    const p = {pa:id, pn:nm}; if (m) p.mc = m;
+    const url = location.origin + location.pathname + '?' + new URLSearchParams(p);
+    $('poster').classList.remove('hidden'); $('pName').textContent = nm; $('qr').innerHTML = '';
+    new QRCode($('qr'), {text:url, width:260, height:260, correctLevel:QRCode.CorrectLevel.M});
+    $('linkTxt').textContent = url;
+  };
+}
 
 function initCustomer() {
   $('customer').classList.remove('hidden');
