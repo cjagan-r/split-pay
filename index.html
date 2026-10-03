@@ -52,6 +52,12 @@
     <div class="big" id="partAmt"></div>
     <div class="dots" id="dots"></div>
     <a class="btn" id="payBtn" href="#"></a>
+    <div id="apps" class="hidden">
+      <div class="sub" id="chooseTxt"></div>
+      <a class="btn" data-k="pp">PhonePe</a>
+      <a class="btn" data-k="gp">Google Pay</a>
+      <a class="btn" data-k="pt">Paytm</a>
+    </div>
   </div>
 
   <div class="card hidden" id="stepAsk">
@@ -94,6 +100,10 @@ const T = {
   te:{shop:'చెల్లించాల్సిన షాప్', enter:'బిల్లు ఎంత?', start:'తరువాత', pay:'చెల్లించండి', part:'భాగం', of:'/', split:n=>`${n} భాగాలుగా చెల్లింపు`, one:'ఒకే చెల్లింపు',
       ask:'చెల్లింపు అయిందా?', yes:'అవును', no:'కాదు, మళ్ళీ', done:'మొత్తం చెల్లించారు! ఈ స్క్రీన్ షాప్‌కు చూపించండి.'}
 };
+T.en.choose = 'Choose your payment app'; T.hi.choose = 'अपना पेमेंट ऐप चुनें'; T.te.choose = 'మీ చెల్లింపు యాప్ ఎంచుకోండి';
+const isAndroid = /android/i.test(navigator.userAgent);
+const schemes = {pp:'phonepe://pay?', gp:'tez://upi/pay?', pt:'paytmmp://pay?'};
+let curQs = '';
 let L = 'en';
 try { L = localStorage.lang || ((navigator.language||'').startsWith('te') ? 'te' : (navigator.language||'').startsWith('hi') ? 'hi' : 'en'); } catch(e){}
 
@@ -134,7 +144,7 @@ function initCustomer() {
   $('lang').onclick = e => { if (e.target.dataset.l) { L = e.target.dataset.l; try{localStorage.lang=L}catch(_){} initCustomer(); render(); } };
   const t = T[L];
   $('shopLbl').textContent = t.shop; $('tEnter').textContent = t.enter; $('start').textContent = t.start;
-  $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
+  $('chooseTxt').textContent = t.choose; $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
   $('amt').oninput = () => {
     const p = Math.round(parseFloat($('amt').value) * 100);
     $('plan').textContent = p > 0 ? (p > limit ? t.split(Math.ceil(p/limit)) + ': ' + split(p, limit).map(inr).join(' + ') : '') : '';
@@ -146,7 +156,7 @@ function initCustomer() {
   };
   $('yes').onclick = () => { i++; waiting = false; if (i >= parts.length) { $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone'); } else { show('stepPay'); render(); launch(); } };
   $('no').onclick = () => { show('stepPay'); render(); launch(); };
-  document.querySelectorAll('#stepPay a').forEach(a => a.onclick = () => { waiting = true; });
+  document.querySelectorAll('#stepPay a').forEach(a => a.onclick = () => { waiting = true; if (a.dataset.k) { try { localStorage.app = a.dataset.k; } catch(e){} } });
 }
 
 function show(id) { ['stepAmount','stepPay','stepAsk','stepDone'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
@@ -159,13 +169,21 @@ function render() {
   $('dots').innerHTML = parts.map((_, k) => `<span class="dot ${k<i?'done':k===i?'cur':''}"></span>`).join('');
   $('payBtn').textContent = `${t.pay} ${inr(parts[i])}`;
   const p = new URLSearchParams({pa, pn, am:(parts[i]/100).toFixed(2), cu:'INR', tn: n>1 ? `Bill part ${i+1} of ${n}` : 'Bill'});
-  const qs = p.toString().replace(/\+/g, '%20');
-  // On Android, an intent link makes the phone list every installed UPI app.
-  $('payBtn').href = /android/i.test(navigator.userAgent) ? `intent://pay?${qs}#Intent;scheme=upi;end` : 'upi://pay?' + qs;
+  const qs = p.toString().replace(/\+/g, '%20'); curQs = qs;
+  // Android: an intent link makes the phone list every installed UPI app.
+  // iPhone: no such list exists, so the customer picks an app once and we remember it.
+  $('payBtn').classList.toggle('hidden', !isAndroid);
+  $('apps').classList.toggle('hidden', isAndroid);
+  $('payBtn').href = isAndroid ? 'intent://pay?' + qs + '#Intent;scheme=upi;end' : '#';
+  document.querySelectorAll('#apps a').forEach(a => a.href = schemes[a.dataset.k] + qs);
 }
 
 // Pop the phone's UPI app list up straight away (runs inside a tap, so browsers allow it).
-function launch() { waiting = true; location.href = $('payBtn').href; }
+function launch() {
+  if (isAndroid) { waiting = true; location.href = $('payBtn').href; return; }
+  let k = ''; try { k = localStorage.app || ''; } catch(e){}
+  if (schemes[k]) { waiting = true; location.href = schemes[k] + curQs; }
+}
 
 // When the customer comes back from their UPI app, ask if it worked.
 document.addEventListener('visibilitychange', () => {
