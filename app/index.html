@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a7d4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Split Pay - Shop</title>
+<script src="../config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1a1d21; --muted:#6b7280; --accent:#0a7d4f; --line:#e3e6ea; --bad:#b42318; --warn:#b54708; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#1b1f25; --fg:#eef0f3; --muted:#9aa3ae; --accent:#3ecf8e; --line:#2a3039; --bad:#f97066; --warn:#fdb022; } }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.4 system-ui,sans-serif; padding:16px 16px 96px; }
+  main { max-width:480px; margin:0 auto; }
+  h1 { font-size:22px; margin:4px 0 12px; } h2 { font-size:18px; margin:18px 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:12px; }
+  label { display:block; font-size:14px; color:var(--muted); margin:12px 0 4px; }
+  input, select { width:100%; padding:13px; font-size:17px; border:1px solid var(--line); border-radius:12px; background:transparent; color:var(--fg); }
+  .btn { display:block; width:100%; padding:15px; font-size:18px; font-weight:700; border:0; border-radius:12px; background:var(--accent); color:#fff; margin-top:14px; cursor:pointer; text-align:center; text-decoration:none; }
+  .btn.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:500; }
+  .btn.small { width:auto; display:inline-block; padding:10px 16px; font-size:16px; margin-top:0; }
+  .tabs { display:flex; gap:8px; margin-bottom:8px; }
+  .tabs button { flex:1; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--fg); font-size:17px; }
+  .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; }
+  .stat b { display:block; font-size:28px; } .stat span { color:var(--muted); font-size:14px; }
+  .bill { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .bill .amt { font-size:26px; font-weight:800; } .sub { color:var(--muted); font-size:14px; }
+  .badge { font-size:13px; padding:4px 10px; border-radius:20px; border:1px solid var(--line); }
+  .badge.claimed { color:var(--warn); border-color:var(--warn); } .badge.received { color:var(--accent); border-color:var(--accent); }
+  .err { color:var(--bad); margin-top:10px; } .ok { color:var(--accent); margin-top:10px; }
+  nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+  nav button { flex:1; padding:12px 4px; background:none; border:0; color:var(--muted); font-size:13px; }
+  nav button span { display:block; font-size:24px; } nav button.on { color:var(--accent); font-weight:700; }
+  .hidden { display:none !important }
+  #qr { display:flex; justify-content:center; padding:14px; background:#fff; border-radius:12px; margin:12px 0; }
+  .poster { text-align:center; } .poster .t { font-size:30px; font-weight:800; }
+  select.range { width:auto; padding:8px 12px; font-size:15px; }
+  @media print { body * { visibility:hidden } #posterCard, #posterCard * { visibility:visible } #posterCard { position:absolute; left:0; top:0; width:100%; border:0 } .noprint { display:none !important } }
+</style>
+</head>
+<body>
+<main>
+
+<div id="needSetup" class="card hidden">
+  <h1>Setup needed</h1>
+  <p>This app is not connected to its database yet. Open <b>config.js</b> and paste the Supabase Project URL and anon key.</p>
+</div>
+
+<!-- ============ LOGIN / REGISTER ============ -->
+<section id="auth" class="hidden">
+  <h1>🏪 Split Pay</h1>
+  <div class="tabs"><button id="tabLogin" class="on">Login</button><button id="tabReg">Register</button></div>
+  <form class="card" id="authForm">
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required>
+    <label for="pw">Password (6+ letters)</label>
+    <input id="pw" type="password" autocomplete="current-password" minlength="6" required>
+    <button class="btn" id="authBtn" type="submit">Login</button>
+    <div id="authMsg"></div>
+  </form>
+</section>
+
+<!-- ============ SHOP DETAILS (first time) ============ -->
+<section id="onboard" class="hidden">
+  <h1>Your shop</h1>
+  <form class="card" id="onboardForm">
+    <label for="oName">Shop name</label><input id="oName" required maxlength="80">
+    <label for="oUpi">Shop UPI ID (e.g. shop@upi)</label><input id="oUpi" autocapitalize="none" required>
+    <button class="btn" type="submit">Save and continue</button>
+    <div id="oMsg"></div>
+  </form>
+  <button class="btn ghost" id="oLogout">Logout</button>
+</section>
+
+<!-- ============ MAIN APP ============ -->
+<section id="appView" class="hidden">
+
+  <div id="vHome">
+    <h1 id="hName"></h1>
+    <div class="stats">
+      <div class="stat"><b id="sRecv">₹0</b><span>Received</span></div>
+      <div class="stat"><b id="sWait">0</b><span>Waiting for you</span></div>
+    </div>
+    <h2>Payments <select id="range" class="range"><option value="1">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></h2>
+    <div id="list"></div>
+  </div>
+
+  <div id="vPoster" class="hidden">
+    <h1>Counter poster</h1>
+    <div class="card poster" id="posterCard">
+      <div class="t" id="pName"></div>
+      <div id="qr"></div>
+      <div class="t" style="font-size:22px">Scan with phone camera<br>फोन कैमरा से स्कैन करें<br>ఫోన్ కెమెరాతో స్కాన్ చేయండి</div>
+    </div>
+    <button class="btn noprint" onclick="window.print()">🖨 Print poster</button>
+    <button class="btn ghost noprint" id="copyLink">Copy link</button>
+    <div class="sub noprint" id="linkTxt" style="word-break:break-all;margin-top:8px"></div>
+  </div>
+
+  <div id="vSettings" class="hidden">
+    <h1>Settings</h1>
+    <form class="card" id="setForm">
+      <label for="sName">Shop name</label><input id="sName" required maxlength="80">
+      <label for="sUpi">Shop UPI ID</label><input id="sUpi" autocapitalize="none" required>
+      <label for="sMc">Merchant code (optional, 4 digits, from your shop's registered QR)</label><input id="sMc" inputmode="numeric" maxlength="4">
+      <label for="sMax">Largest single payment (₹100 to ₹2000)</label><input id="sMax" type="number" inputmode="numeric" min="100" max="2000" required>
+      <button class="btn" type="submit">Save</button>
+      <div id="sMsg"></div>
+    </form>
+    <form class="card" id="pwForm">
+      <label for="newPw">New password</label><input id="newPw" type="password" minlength="6" autocomplete="new-password">
+      <button class="btn ghost" type="submit">Change password</button>
+      <div id="pwMsg"></div>
+    </form>
+    <div class="card"><div class="sub" id="whoami"></div><button class="btn ghost" id="logout">Logout</button></div>
+  </div>
+
+  <nav>
+    <button id="nHome" class="on"><span>🏠</span>Home</button>
+    <button id="nPoster"><span>🧾</span>Poster</button>
+    <button id="nSet"><span>⚙️</span>Settings</button>
+  </nav>
+</section>
+
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const inr = p => '₹' + (p/100).toLocaleString('en-IN', {minimumFractionDigits: p%100 ? 2 : 0});
+const UPI_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
+const CFG = window.SPLITPAY || {};
+let sb, session = null, shop = null, bills = [], channel = null, refreshTimer = null, authMode = 'login';
+
+function view(id) { ['needSetup','auth','onboard','appView'].forEach(x => $(x).classList.toggle('hidden', x !== id)); }
+function say(id, text, ok) { $(id).className = ok ? 'ok' : 'err'; $(id).textContent = text; }
+
+if (!CFG.url || !CFG.anon) view('needSetup'); else start();
+
+async function start() {
+  sb = supabase.createClient(CFG.url, CFG.anon);
+  const { data } = await sb.auth.getSession();
+  await route(data.session);
+  sb.auth.onAuthStateChange(event => { if (event === 'SIGNED_OUT') route(null); });
+}
+
+async function route(s) {
+  session = s;
+  stopLive();
+  if (!s) return view('auth');
+  const { data, error } = await sb.from('shops').select('*').maybeSingle();
+  if (error) { view('auth'); return say('authMsg', error.message); }
+  shop = data;
+  if (!shop) {
+    view('onboard');
+    try { const p = JSON.parse(localStorage.pendingShop || '{}'); $('oName').value = p.name || ''; $('oUpi').value = p.upi || ''; } catch(e){}
+    return;
+  }
+  showApp();
+}
+
+/* ---------- auth ---------- */
+function setMode(m) {
+  authMode = m;
+  $('tabLogin').classList.toggle('on', m === 'login'); $('tabReg').classList.toggle('on', m === 'register');
+  $('authBtn').textContent = m === 'login' ? 'Login' : 'Create account';
+  $('pw').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+  $('authMsg').textContent = '';
+}
+$('tabLogin').onclick = () => setMode('login'); $('tabReg').onclick = () => setMode('register');
+
+$('authForm').onsubmit = async e => {
+  e.preventDefault();
+  const email = $('email').value.trim(), password = $('pw').value;
+  $('authBtn').disabled = true; $('authMsg').textContent = '';
+  if (authMode === 'login') {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) say('authMsg', error.message); else await route(data.session);
+  } else {
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (error) say('authMsg', error.message);
+    else if (data.session) await route(data.session);
+    else say('authMsg', 'Account created. Check your email to confirm, then log in.', true);
+  }
+  $('authBtn').disabled = false;
+};
+
+$('onboardForm').onsubmit = async e => {
+  e.preventDefault();
+  const name = $('oName').value.trim(), upi = $('oUpi').value.trim();
+  if (!UPI_RE.test(upi)) return say('oMsg', 'That UPI ID does not look right.');
+  const { error } = await sb.from('shops').insert({ owner_id: session.user.id, name, upi_id: upi });
+  if (error) return say('oMsg', error.message);
+  try { localStorage.removeItem('pendingShop'); } catch(_){}
+  route(session);
+};
+
+const logout = async () => { await sb.auth.signOut(); };
+$('logout').onclick = logout; $('oLogout').onclick = logout;
+
+/* ---------- app shell ---------- */
+function showApp() {
+  view('appView');
+  $('hName').textContent = shop.name;
+  $('whoami').textContent = 'Signed in as ' + session.user.email;
+  $('sName').value = shop.name; $('sUpi').value = shop.upi_id; $('sMc').value = shop.merchant_code || ''; $('sMax').value = shop.max_payment;
+  drawPoster();
+  tab('Home');
+  loadBills(); startLive();
+  try { if (navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
+}
+
+function tab(name) {
+  ['Home','Poster','Set'].forEach(n => $('n' + n).classList.toggle('on', n === name));
+  $('vHome').classList.toggle('hidden', name !== 'Home');
+  $('vPoster').classList.toggle('hidden', name !== 'Poster');
+  $('vSettings').classList.toggle('hidden', name !== 'Set');
+}
+$('nHome').onclick = () => tab('Home'); $('nPoster').onclick = () => tab('Poster'); $('nSet').onclick = () => tab('Set');
+
+/* ---------- dashboard ---------- */
+function sinceDate() {
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (parseInt($('range').value, 10) - 1)); return d.toISOString();
+}
+
+async function loadBills(announce) {
+  const { data, error } = await sb.from('bills').select('*').in('status', ['claimed', 'received'])
+    .gte('created_at', sinceDate()).order('created_at', { ascending: false }).limit(300);
+  if (error) return;
+  const old = new Set(bills.map(b => b.id));
+  bills = data;
+  if (announce && bills.some(b => b.status === 'claimed' && !old.has(b.id))) beep();
+  drawBills();
+}
+
+function drawBills() {
+  const recv = bills.filter(b => b.status === 'received').reduce((a, b) => a + b.total_paise, 0);
+  const wait = bills.filter(b => b.status === 'claimed').length;
+  $('sRecv').textContent = inr(recv); $('sWait').textContent = wait;
+  $('list').innerHTML = bills.length ? bills.map(b => `
+    <div class="card bill">
+      <div><div class="amt">${inr(b.total_paise)}</div>
+      <div class="sub">${b.parts > 1 ? b.parts + ' payments · ' : ''}${new Date(b.created_at).toLocaleString([], {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</div></div>
+      ${b.status === 'claimed' ? `<button class="btn small" data-id="${esc(b.id)}">Received ✓</button>` : `<span class="badge received">✓ Received</span>`}
+    </div>`).join('') : '<div class="card sub">No payments yet. When a customer pays, it shows up here.</div>';
+}
+
+$('list').onclick = async e => {
+  const id = e.target.dataset && e.target.dataset.id; if (!id) return;
+  e.target.disabled = true;
+  const { error } = await sb.rpc('mark_received', { p_id: id });
+  if (error) { e.target.disabled = false; return alert(error.message); }
+  loadBills();
+};
+$('range').onchange = () => loadBills();
+
+function startLive() {
+  channel = sb.channel('bills-live').on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => loadBills(true)).subscribe();
+  refreshTimer = setInterval(() => loadBills(true), 15000); // backup if the live connection drops
+}
+function stopLive() {
+  if (channel) { sb.removeChannel(channel); channel = null; }
+  clearInterval(refreshTimer);
+}
+function beep() {
+  try { if (navigator.vibrate) navigator.vibrate(300); const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); setTimeout(() => o.stop(), 250); } catch(e){}
+}
+
+/* ---------- poster ---------- */
+function shopLink() {
+  return location.origin + location.pathname.replace(/app\/(index\.html)?$/, '') + '?s=' + shop.slug;
+}
+function drawPoster() {
+  $('pName').textContent = shop.name; $('qr').innerHTML = '';
+  new QRCode($('qr'), { text: shopLink(), width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+  $('linkTxt').textContent = shopLink();
+}
+$('copyLink').onclick = async () => { try { await navigator.clipboard.writeText(shopLink()); $('copyLink').textContent = 'Copied ✓'; } catch(e){} };
+
+/* ---------- settings ---------- */
+$('setForm').onsubmit = async e => {
+  e.preventDefault();
+  const upi = $('sUpi').value.trim(), mc = $('sMc').value.trim(), max = parseInt($('sMax').value, 10);
+  if (!UPI_RE.test(upi)) return say('sMsg', 'That UPI ID does not look right.');
+  if (mc && !/^[0-9]{4}$/.test(mc)) return say('sMsg', 'Merchant code must be 4 digits.');
+  const { data, error } = await sb.from('shops').update({ name: $('sName').value.trim(), upi_id: upi, merchant_code: mc || null, max_payment: max }).eq('id', shop.id).select().single();
+  if (error) return say('sMsg', error.message);
+  shop = data; $('hName').textContent = shop.name; drawPoster();
+  say('sMsg', 'Saved. The poster does not need reprinting.', true);
+};
+$('pwForm').onsubmit = async e => {
+  e.preventDefault();
+  const { error } = await sb.auth.updateUser({ password: $('newPw').value });
+  if (error) say('pwMsg', error.message); else { say('pwMsg', 'Password changed.', true); $('newPw').value = ''; }
+};
+</script>
+</body>
+</html>
