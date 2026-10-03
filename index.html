@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Split Pay</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --fg:#1a1d21; --muted:#6b7280; --accent:#0a7d4f; --line:#e3e6ea; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#1b1f25; --fg:#eef0f3; --muted:#9aa3ae; --accent:#3ecf8e; --line:#2a3039; } }
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1a1d21; --muted:#6b7280; --accent:#0a7d4f; --line:#e3e6ea; --bad:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#1b1f25; --fg:#eef0f3; --muted:#9aa3ae; --accent:#3ecf8e; --line:#2a3039; --bad:#f97066; } }
   * { box-sizing:border-box }
   body { margin:0; background:var(--bg); color:var(--fg); font:18px/1.4 system-ui,sans-serif; padding:16px; }
   main { max-width:420px; margin:0 auto; }
@@ -16,8 +16,6 @@
   input { width:100%; padding:14px; font-size:20px; border:1px solid var(--line); border-radius:12px; background:transparent; color:var(--fg); margin:6px 0; }
   input.amt { font-size:40px; text-align:center; font-weight:700; }
   .btn { display:block; width:100%; padding:18px; font-size:22px; font-weight:700; border:0; border-radius:14px; background:var(--accent); color:#fff; margin-top:14px; text-decoration:none; cursor:pointer; }
-  .btn.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:500; }
-  .row { display:flex; gap:10px } .row .btn { margin-top:14px }
   .big { font-size:48px; font-weight:800; margin:4px 0; }
   .sub { color:var(--muted); font-size:16px; }
   .dots { display:flex; gap:8px; justify-content:center; margin:10px 0; }
@@ -25,17 +23,15 @@
   .lang { display:flex; gap:8px; justify-content:center; margin-bottom:12px; }
   .lang button { padding:8px 16px; border-radius:20px; border:1px solid var(--line); background:var(--card); color:var(--fg); font-size:16px; }
   .lang button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
-  .app { font-size:16px; padding:14px 6px; text-align:center; }
   .hidden { display:none !important }
-  #qr { display:flex; justify-content:center; padding:14px; background:#fff; border-radius:12px; margin:12px 0; }
-  .poster-title { font-size:30px; font-weight:800; }
-  @media print { body * { visibility:hidden } #poster, #poster * { visibility:visible } #poster { position:absolute; left:0; top:0; width:100%; border:0 } }
+  .err { color:var(--bad); }
 </style>
 </head>
 <body>
 <main>
 
-<!-- ============ CUSTOMER PAGE (opened from the poster QR) ============ -->
+<div id="msg" class="card hidden"><h1 id="msgTxt"></h1></div>
+
 <section id="customer" class="hidden">
   <div class="lang" id="lang"></div>
   <div class="card"><div class="sub" id="shopLbl"></div><h1 id="shop"></h1></div>
@@ -65,65 +61,33 @@
     </div>
   </div>
 
-  <div class="card hidden" id="stepAsk">
-    <h1 id="tAsk"></h1>
-    <div class="row"><button class="btn" id="yes"></button><button class="btn ghost" id="no"></button></div>
-  </div>
-
   <div class="card hidden" id="stepDone"><div class="big">✅</div><h1 id="tDone"></h1><div class="big" id="doneAmt"></div><div class="sub" id="confirm"></div></div>
 </section>
-
-<!-- ============ ONE-TIME SETUP (family member does this) ============ -->
-<section id="setup" class="hidden">
-  <div class="card">
-    <h1>Shop setup (one time)</h1>
-    <input id="upi" placeholder="Shop UPI ID  e.g. shop@upi" autocapitalize="none">
-    <input id="name" placeholder="Shop name">
-    <button class="btn" id="make">Make poster QR</button>
-  </div>
-  <div class="card hidden" id="poster">
-    <div class="poster-title" id="pName"></div>
-    <div id="qr"></div>
-    <div class="poster-title" style="font-size:22px">Scan with phone camera<br>फोन कैमरा से स्कैन करें<br>ఫోన్ కెమెరాతో స్కాన్ చేయండి</div>
-    <button class="btn" onclick="window.print()">🖨 Print poster</button>
-    <div class="sub" id="linkTxt" style="word-break:break-all;margin-top:10px"></div>
-  </div>
-</section>
-
-<section id="shopView" class="hidden">
-  <div class="card"><div class="sub">Shop screen - keep this open</div><h1 id="shopName"></h1></div>
-  <div id="claims"></div>
-</section>
-<div class="card hidden" id="shopCard">
-  <a class="btn" id="shopLink">Open shop screen</a>
-  <div class="sub" style="margin-top:10px">Open this on the shop's phone and keep it open. Each payment shows up with a Received button.</div>
-</div>
 
 </main>
 
 <script>
 const $ = id => document.getElementById(id);
 const inr = p => '₹' + (p/100).toLocaleString('en-IN', {minimumFractionDigits: p%100 ? 2 : 0});
-const LIMIT = 200000; // 2000 rupees, in paise. Override with &lim=1500 in the link.
+const CFG = window.SPLITPAY || {};
+const MAX = 200000; // 2000 rupees in paise
 
 const T = {
   en:{shop:'Pay to', enter:'How much is the bill?', start:'Next', pay:'Pay', part:'Part', of:'of', split:n=>`Will be paid in ${n} parts`, one:'Single payment',
-      ask:'Did the payment go through?', yes:'Yes', no:'No, try again', done:'All paid! Show this screen to the shop.'},
+      done:'All paid! Show this screen to the shop.', choose:'Choose your payment app', retry:'Last payment did not go through? Pay it again',
+      wait:'Waiting for shop to confirm...', ok:'Shop confirmed ✓', bad:'This QR is not working. Please ask the shop.', load:'Loading...'},
   hi:{shop:'यहाँ भुगतान करें', enter:'बिल कितने का है?', start:'आगे', pay:'भुगतान करें', part:'भाग', of:'/', split:n=>`${n} हिस्सों में भुगतान होगा`, one:'एक भुगतान',
-      ask:'क्या पेमेंट हो गया?', yes:'हाँ', no:'नहीं, फिर से', done:'पूरा भुगतान हो गया! यह स्क्रीन दुकान को दिखाएँ।'},
+      done:'पूरा भुगतान हो गया! यह स्क्रीन दुकान को दिखाएँ।', choose:'अपना पेमेंट ऐप चुनें', retry:'पिछला पेमेंट नहीं हुआ? फिर से करें',
+      wait:'दुकानदार की पुष्टि का इंतज़ार...', ok:'दुकानदार ने पुष्टि की ✓', bad:'यह QR काम नहीं कर रहा। दुकानदार से पूछें।', load:'लोड हो रहा है...'},
   te:{shop:'చెల్లించాల్సిన షాప్', enter:'బిల్లు ఎంత?', start:'తరువాత', pay:'చెల్లించండి', part:'భాగం', of:'/', split:n=>`${n} భాగాలుగా చెల్లింపు`, one:'ఒకే చెల్లింపు',
-      ask:'చెల్లింపు అయిందా?', yes:'అవును', no:'కాదు, మళ్ళీ', done:'మొత్తం చెల్లించారు! ఈ స్క్రీన్ షాప్‌కు చూపించండి.'}
+      done:'మొత్తం చెల్లించారు! ఈ స్క్రీన్ షాప్‌కు చూపించండి.', choose:'మీ చెల్లింపు యాప్ ఎంచుకోండి', retry:'గత చెల్లింపు కాలేదా? మళ్ళీ చేయండి',
+      wait:'షాప్ నిర్ధారణ కోసం వేచి ఉంది...', ok:'షాప్ నిర్ధారించింది ✓', bad:'ఈ QR పనిచేయడం లేదు. షాప్‌ను అడగండి.', load:'లోడ్ అవుతోంది...'}
 };
-T.en.choose = 'Choose your payment app'; T.hi.choose = 'अपना पेमेंट ऐप चुनें'; T.te.choose = 'మీ చెల్లింపు యాప్ ఎంచుకోండి';
 const isAndroid = /android/i.test(navigator.userAgent);
 const schemes = {pp:'phonepe://pay?', gp:'tez://upi/pay?', pt:'paytmmp://pay?', bh:'bhim://upi/pay?', am:'amazonpay://upi/pay?', cr:'credpay://upi/pay?', wa:'upi://pay?'};
-let curQs = '';
-T.en.waitShop = 'Waiting for shop to confirm...'; T.hi.waitShop = 'दुकानदार की पुष्टि का इंतज़ार...'; T.te.waitShop = 'షాప్ నిర్ధారణ కోసం వేచి ఉంది...';
-T.en.shopOk = 'Shop confirmed ✓'; T.hi.shopOk = 'दुकानदार ने पुष्टि की ✓'; T.te.shopOk = 'షాప్ నిర్ధారించింది ✓';
-T.en.retry = 'Last payment did not go through? Pay it again'; T.hi.retry = 'पिछला पेमेंट नहीं हुआ? फिर से करें'; T.te.retry = 'గత చెల్లింపు కాలేదా? మళ్ళీ చేయండి';
-const SK = new URLSearchParams(location.search).get('k');
 let L = 'en';
 try { L = localStorage.lang || ((navigator.language||'').startsWith('te') ? 'te' : (navigator.language||'').startsWith('hi') ? 'hi' : 'en'); } catch(e){}
+if (!T[L]) L = 'en';
 
 function split(total, limit) {
   const n = Math.ceil(total / limit), base = Math.floor(total / n), r = total - base * n;
@@ -131,32 +95,32 @@ function split(total, limit) {
 }
 
 const q = new URLSearchParams(location.search);
-const pa = q.get('pa'), pn = q.get('pn') || 'Shop';
-const limit = Math.round(parseFloat(q.get('lim') || '2000') * 100) || LIMIT;
+const slug = q.get('s');
+let pa = q.get('pa'), pn = q.get('pn') || 'Shop', mc = q.get('mc') || '';
+let limit = Math.min(Math.round(parseFloat(q.get('lim') || '2000') * 100) || MAX, MAX);
+let parts = [], i = 0, waiting = false, curQs = '', bill = null;
 
-if (q.get('shop') && SK) initShop(); else if (!pa) initSetup(); else initCustomer();
-
-/* ---------- setup ---------- */
-function initSetup() {
-  $('setup').classList.remove('hidden');
-  try { $('upi').value = localStorage.upi || ''; $('name').value = localStorage.shop || ''; } catch(e){}
-  $('make').onclick = () => {
-    const id = $('upi').value.trim(), nm = $('name').value.trim();
-    if (!/^[\w.\-]+@[\w.\-]+$/.test(id)) return alert('Enter a valid UPI ID');
-    if (!nm) return alert('Enter shop name');
-    try { localStorage.upi = id; localStorage.shop = nm; } catch(e){}
-    let key = ''; try { key = localStorage.k || ''; } catch(e){}
-    if (!key) { key = Math.random().toString(36).slice(2, 12); try { localStorage.k = key; } catch(e){} }
-    const url = location.origin + location.pathname + '?' + new URLSearchParams({pa:id, pn:nm, k:key});
-    $('poster').classList.remove('hidden'); $('pName').textContent = nm; $('qr').innerHTML = '';
-    new QRCode($('qr'), {text:url, width:260, height:260, correctLevel:QRCode.CorrectLevel.M});
-    $('linkTxt').textContent = url;
-    $('shopCard').classList.remove('hidden'); $('shopLink').href = location.origin + location.pathname + '?shop=1&k=' + key + '&pn=' + encodeURIComponent(nm);
-  };
+function rpc(fn, args) {
+  return fetch(CFG.url + '/rest/v1/rpc/' + fn, {
+    method:'POST',
+    headers:{apikey:CFG.anon, Authorization:'Bearer ' + CFG.anon, 'Content-Type':'application/json'},
+    body: JSON.stringify(args)
+  }).then(r => r.ok ? r.text().then(t => t ? JSON.parse(t) : null) : Promise.reject(r.status));
 }
 
-/* ---------- customer ---------- */
-let parts = [], i = 0, waiting = false;
+function message(key) { $('msg').classList.remove('hidden'); $('msgTxt').textContent = T[L][key]; }
+
+if (slug) {
+  message('load');
+  if (!CFG.url) message('bad');
+  else rpc('get_shop', {p_slug: slug}).then(rows => {
+    if (!rows || !rows[0]) return message('bad');
+    pa = rows[0].upi_id; pn = rows[0].name; mc = rows[0].merchant_code || '';
+    limit = Math.min(rows[0].max_payment * 100, MAX);
+    $('msg').classList.add('hidden'); initCustomer();
+  }).catch(() => message('bad'));
+} else if (pa) initCustomer();
+else message('bad');
 
 function initCustomer() {
   $('customer').classList.remove('hidden');
@@ -165,23 +129,23 @@ function initCustomer() {
   $('lang').onclick = e => { if (e.target.dataset.l) { L = e.target.dataset.l; try{localStorage.lang=L}catch(_){} initCustomer(); render(); } };
   const t = T[L];
   $('shopLbl').textContent = t.shop; $('tEnter').textContent = t.enter; $('start').textContent = t.start;
-  $('chooseTxt').textContent = t.choose; $('retry').textContent = t.retry; $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
+  $('chooseTxt').textContent = t.choose; $('retry').textContent = t.retry; $('tDone').textContent = t.done;
   $('amt').oninput = () => {
     const p = Math.round(parseFloat($('amt').value) * 100);
-    $('plan').textContent = p > 0 ? (p > limit ? t.split(Math.ceil(p/limit)) + ': ' + split(p, limit).map(inr).join(' + ') : '') : '';
+    $('plan').textContent = p > limit ? t.split(Math.ceil(p/limit)) + ': ' + split(p, limit).map(inr).join(' + ') : '';
   };
   $('start').onclick = () => {
     const p = Math.round(parseFloat($('amt').value) * 100);
     if (!(p > 0)) return $('amt').focus();
-    parts = split(p, limit); i = 0; show('stepPay'); render(); launch();
+    parts = split(p, limit); i = 0; bill = null;
+    if (slug) rpc('start_bill', {p_slug: slug, p_total: p, p_parts: parts.length}).then(r => { bill = r && r[0]; }).catch(() => {});
+    show('stepPay'); render(); launch();
   };
-  $('yes').onclick = () => { i++; waiting = false; if (i >= parts.length) { $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone'); } else { show('stepPay'); render(); launch(); } };
-  $('no').onclick = () => { show('stepPay'); render(); launch(); };
   document.querySelectorAll('#stepPay a').forEach(a => a.onclick = () => { waiting = true; if (a.dataset.k) { try { localStorage.app = a.dataset.k; } catch(e){} } });
   $('retry').onclick = e => { e.preventDefault(); if (i > 0) { i--; render(); launch(); } };
 }
 
-function show(id) { ['stepAmount','stepPay','stepAsk','stepDone'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
+function show(id) { ['stepAmount','stepPay','stepDone'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
 
 function render() {
   if (!parts.length) return;
@@ -191,8 +155,9 @@ function render() {
   $('retry').classList.toggle('hidden', i === 0);
   $('dots').innerHTML = parts.map((_, k) => `<span class="dot ${k<i?'done':k===i?'cur':''}"></span>`).join('');
   $('payBtn').textContent = `${t.pay} ${inr(parts[i])}`;
-  const p = new URLSearchParams({pa, pn, am:(parts[i]/100).toFixed(2), cu:'INR', tn: n>1 ? `Bill part ${i+1} of ${n}` : 'Bill'});
-  const qs = p.toString().replace(/\+/g, '%20'); curQs = qs;
+  const p = {pa, pn, am:(parts[i]/100).toFixed(2), cu:'INR', tn: n>1 ? `Bill part ${i+1} of ${n}` : 'Bill'};
+  if (mc) p.mc = mc;
+  const qs = new URLSearchParams(p).toString().replace(/\+/g, '%20'); curQs = qs;
   // Android: an intent link makes the phone list every installed UPI app.
   // iPhone: no such list exists, so the customer picks an app once and we remember it.
   $('payBtn').classList.toggle('hidden', !isAndroid);
@@ -208,68 +173,29 @@ function launch() {
   if (schemes[k]) { waiting = true; location.href = schemes[k] + curQs; }
 }
 
-// When the customer comes back from their UPI app, ask if it worked.
+// Back from the payment app: go straight on to the next part, or finish.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || !waiting || !parts.length) return;
   waiting = false; i++;
   if (i >= parts.length) finish(); else { show('stepPay'); render(); launch(); }
 });
+
 function finish() {
-  $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone'); sendClaim();
-}
-
-// Tell the shop's phone (via the free ntfy.sh relay) that a bill was paid, and wait for its OK.
-function sendClaim() {
-  if (!SK) return;
-  const id = Math.random().toString(36).slice(2, 10);
-  const total = parts.reduce((a,b)=>a+b,0);
-  try { fetch('https://ntfy.sh/sp-' + SK, {method:'POST', body: JSON.stringify({id:id, total:total, n:parts.length, t:Date.now()})}).catch(function(){}); } catch(e){}
-  $('confirm').textContent = T[L].waitShop;
-  try {
-    const es = new EventSource('https://ntfy.sh/sp-' + SK + '-r-' + id + '/sse');
-    es.onmessage = function(e) {
-      try { if (JSON.parse(e.data).event !== 'message') return; } catch(_) { return; }
-      $('confirm').textContent = T[L].shopOk; $('confirm').style.color = 'var(--accent)'; $('confirm').style.fontWeight = '700'; es.close();
-    };
-  } catch(e){}
-}
-
-function beep() {
-  try { if (navigator.vibrate) navigator.vibrate(300); const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); setTimeout(function(){ o.stop(); }, 250); } catch(e){}
-}
-
-/* ---------- shop screen ---------- */
-function initShop() {
-  $('shopView').classList.remove('hidden'); $('shopName').textContent = pn;
-  try { if (navigator.wakeLock) navigator.wakeLock.request('screen'); } catch(e){}
-  let done = {}; try { done = JSON.parse(localStorage['done' + SK] || '{}'); } catch(e){}
-  const claims = {};
-  const draw = function() {
-    const ids = Object.keys(claims).sort(function(a,b){ return claims[b].t - claims[a].t; });
-    $('claims').innerHTML = ids.length ? ids.map(function(id) {
-      const c = claims[id];
-      return '<div class="card"><div class="big">' + inr(c.total) + '</div><div class="sub">' + (c.n > 1 ? c.n + ' payments · ' : '') + new Date(c.t).toLocaleTimeString() + '</div>' +
-        (done[id] ? '<div class="big">✅</div>' : '<button class="btn" data-id="' + id + '">Received ✓</button>') + '</div>';
-    }).join('') : '<div class="sub">Waiting for payments...</div>';
-  };
-  $('claims').onclick = function(e) {
-    const id = e.target.dataset.id; if (!id) return;
-    fetch('https://ntfy.sh/sp-' + SK + '-r-' + id, {method:'POST', body:'ok'}).catch(function(){});
-    done[id] = 1; try { localStorage['done' + SK] = JSON.stringify(done); } catch(_){} draw();
-  };
-  const es = new EventSource('https://ntfy.sh/sp-' + SK + '/sse');
-  es.onmessage = function(e) {
-    try {
-      const m = JSON.parse(e.data); if (m.event !== 'message') return;
-      const c = JSON.parse(m.message);
-      const id = String(c.id).replace(/[^a-z0-9]/g, '').slice(0, 12);
-      if (!id || claims[id]) return;
-      claims[id] = {total: Number(c.total) || 0, n: Number(c.n) || 1, t: Number(c.t) || Date.now()};
-      if (!done[id]) beep();
-      draw();
-    } catch(_){}
-  };
-  draw();
+  $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone');
+  if (!bill) return;
+  const t = T[L];
+  $('confirm').textContent = t.wait;
+  rpc('claim_bill', {p_id: bill.id, p_token: bill.token}).catch(() => {});
+  let tries = 0;
+  const timer = setInterval(() => {
+    if (++tries > 200) return clearInterval(timer);
+    rpc('bill_status', {p_id: bill.id, p_token: bill.token}).then(s => {
+      if (s === 'received') {
+        clearInterval(timer);
+        $('confirm').textContent = t.ok; $('confirm').style.color = 'var(--accent)'; $('confirm').style.fontWeight = '700';
+      }
+    }).catch(() => {});
+  }, 3000);
 }
 </script>
 </body>
