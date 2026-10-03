@@ -25,6 +25,7 @@
   .lang { display:flex; gap:8px; justify-content:center; margin-bottom:12px; }
   .lang button { padding:8px 16px; border-radius:20px; border:1px solid var(--line); background:var(--card); color:var(--fg); font-size:16px; }
   .lang button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .app { font-size:16px; padding:14px 6px; text-align:center; }
   .hidden { display:none !important }
   #qr { display:flex; justify-content:center; padding:14px; background:#fff; border-radius:12px; margin:12px 0; }
   .poster-title { font-size:30px; font-weight:800; }
@@ -51,6 +52,8 @@
     <div class="big" id="partAmt"></div>
     <div class="dots" id="dots"></div>
     <a class="btn" id="payBtn" href="#"></a>
+    <div class="sub" id="orUse" style="margin-top:16px"></div>
+    <div class="row"><a class="btn ghost app" id="aPP">PhonePe</a><a class="btn ghost app" id="aGP">Google Pay</a><a class="btn ghost app" id="aPT">Paytm</a></div>
   </div>
 
   <div class="card hidden" id="stepAsk">
@@ -93,6 +96,7 @@ const T = {
   te:{shop:'చెల్లించాల్సిన షాప్', enter:'బిల్లు ఎంత?', start:'తరువాత', pay:'చెల్లించండి', part:'భాగం', of:'/', split:n=>`${n} భాగాలుగా చెల్లింపు`, one:'ఒకే చెల్లింపు',
       ask:'చెల్లింపు అయిందా?', yes:'అవును', no:'కాదు, మళ్ళీ', done:'మొత్తం చెల్లించారు! ఈ స్క్రీన్ షాప్‌కు చూపించండి.'}
 };
+T.en.or = 'Or pay with:'; T.hi.or = 'या इसमें भुगतान करें:'; T.te.or = 'లేదా దీనితో చెల్లించండి:';
 let L = 'en';
 try { L = localStorage.lang || ((navigator.language||'').startsWith('te') ? 'te' : (navigator.language||'').startsWith('hi') ? 'hi' : 'en'); } catch(e){}
 
@@ -133,7 +137,7 @@ function initCustomer() {
   $('lang').onclick = e => { if (e.target.dataset.l) { L = e.target.dataset.l; try{localStorage.lang=L}catch(_){} initCustomer(); render(); } };
   const t = T[L];
   $('shopLbl').textContent = t.shop; $('tEnter').textContent = t.enter; $('start').textContent = t.start;
-  $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
+  $('orUse').textContent = t.or; $('tAsk').textContent = t.ask; $('yes').textContent = t.yes; $('no').textContent = t.no; $('tDone').textContent = t.done;
   $('amt').oninput = () => {
     const p = Math.round(parseFloat($('amt').value) * 100);
     $('plan').textContent = p > 0 ? (p > limit ? t.split(Math.ceil(p/limit)) + ': ' + split(p, limit).map(inr).join(' + ') : '') : '';
@@ -145,7 +149,7 @@ function initCustomer() {
   };
   $('yes').onclick = () => { i++; waiting = false; if (i >= parts.length) { $('doneAmt').textContent = inr(parts.reduce((a,b)=>a+b,0)); show('stepDone'); } else { show('stepPay'); render(); } };
   $('no').onclick = () => { waiting = false; show('stepPay'); render(); };
-  $('payBtn').onclick = () => { waiting = true; };
+  document.querySelectorAll('#stepPay a').forEach(a => a.onclick = () => { waiting = true; });
 }
 
 function show(id) { ['stepAmount','stepPay','stepAsk','stepDone'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
@@ -158,7 +162,10 @@ function render() {
   $('dots').innerHTML = parts.map((_, k) => `<span class="dot ${k<i?'done':k===i?'cur':''}"></span>`).join('');
   $('payBtn').textContent = `${t.pay} ${inr(parts[i])}`;
   const p = new URLSearchParams({pa, pn, am:(parts[i]/100).toFixed(2), cu:'INR', tn: n>1 ? `Bill part ${i+1} of ${n}` : 'Bill'});
-  $('payBtn').href = 'upi://pay?' + p.toString().replace(/\+/g, '%20');
+  const qs = p.toString().replace(/\+/g, '%20');
+  // On Android, an intent link makes the phone list every installed UPI app.
+  $('payBtn').href = /android/i.test(navigator.userAgent) ? `intent://pay?${qs}#Intent;scheme=upi;end` : 'upi://pay?' + qs;
+  $('aPP').href = 'phonepe://pay?' + qs; $('aGP').href = 'tez://upi/pay?' + qs; $('aPT').href = 'paytmmp://pay?' + qs;
 }
 
 // When the customer comes back from their UPI app, ask if it worked.
